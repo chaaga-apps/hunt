@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="shortcut icon" href="#">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Reaction Time</title>
+    <script src="https://cdn.jsdelivr.net/gh/chaaga-world/chaaga-sdk@latest/chaaga.rpc.js"></script>
+    <style>
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #64b0ff; /* Sky Blue */
+            margin: 0;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            flex: 1;
+            overflow: hidden;
+            cursor: crosshair;
+        }
+        #ground {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 15vh;
+            background-color: #56bc16;
+            border-top: 10px solid #7edd39;
+            z-index: 2;
+            pointer-events: none;
+        }
+        #bushes {
+            position: absolute;
+            bottom: 15vh;
+            left: 10%;
+            width: 150px;
+            height: 80px;
+            background: #288c11;
+            border-radius: 50px 50px 0 0;
+            z-index: 1;
+            pointer-events: none;
+        }
+        .bird {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            font-size: 60px;
+            line-height: 80px;
+            text-align: center;
+            cursor: pointer;
+            z-index: 3;
+            transition: transform 0.1s;
+            /* Crucial for mobile touch responsiveness */
+            touch-action: manipulation; 
+            filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.3));
+        }
+        .bird.dead {
+            transition: top 0.5s ease-in, transform 0.2s;
+            transform: rotate(180deg) !important;
+            pointer-events: none;
+        }
+        #hint-arrow {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            display: none;
+            z-index: 5;
+            pointer-events: none;
+            animation: blink 0.15s infinite alternate;
+            /* Pixel Art Arrow using box-shadow (Scale: 12px pixels) */
+            box-shadow: 
+                /* Middle Row */
+                -30px -6px #fff, -18px -6px #ff4444, -6px -6px #ff4444, 6px -6px #ff4444, 18px -6px #fff,
+                /* Upper Row 1 */
+                -18px -18px #fff, -6px -18px #ff4444, 6px -18px #fff,
+                /* Upper Row 2 */
+                -6px -30px #fff,
+                /* Lower Row 1 */
+                -18px 6px #fff, -6px 6px #ff4444, 6px 6px #fff,
+                /* Lower Row 2 */
+                -6px 18px #fff;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+        #message-box {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px 40px;
+            border-radius: 10px;
+            text-align: center;
+            pointer-events: auto;
+            cursor: pointer;
+            border: 2px solid white;
+            color: white;
+        }
+        #message-box h2 {
+            margin: 0 0 10px 0;
+            font-size: 2rem;
+            color: #ffcc00;
+            text-transform: uppercase;
+        }
+        #message-box p {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+        @keyframes blink {
+            from { opacity: 0.5; }
+            to { opacity: 1; }
+        }
+        #leaderboard {
+            position: relative;
+            width: 100%;
+            height: 40vh;
+            background-color: #333;
+            padding: 10px;
+            box-sizing: border-box;
+            border-top: 2px solid #fff;
+            color: white;
+            z-index: 20;
+            overflow-y: auto;
+            pointer-events: auto;
+        }
+        h3 { margin-top: 0; text-align: center; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #444;
+        }
+        th {
+            background-color: #444;
+            color: white;
+            position: sticky;
+            top: 0;
+        }
+        .highlight {
+            color: #4caf50;
+            font-weight: bold;
+        }
+        #status-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        input {
+            padding: 10px;
+            font-size: 1.2rem;
+            border-radius: 5px;
+            border: none;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1.2rem;
+            border-radius: 5px;
+            border: none;
+            background-color: #4caf50;
+            color: white;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #555;
+            cursor: default;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="status-modal">
+        <div id="loading-msg">Connecting...</div>
+    </div>
+
+    <div id="game-container">
+        <div id="ground"></div>
+        <div id="bushes"></div>
+        <div id="hint-arrow"></div>
+        <div id="ui-layer">
+            <div id="message-box" onclick="prepareRound()">
+                <h2>Duck Hunt</h2>
+                <p>Tap to Start</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="leaderboard">
+        <h3>Leaderboard</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Player</th>
+                    <th>Time (ms)</th>
+                </tr>
+            </thead>
+            <tbody id="leaderboard-body">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let gameState = 'waiting'; // waiting (red), ready (green), result (blue)
+        let activeBird = null;
+        let startTime = 0;
+        let timeoutId = null;
+        let hintTimeoutId = null;
+        let animationId = null;
+        let userId = null;
+        let userName = null;
+        let myHighScore = Infinity;
+        let roomState = {};
+
+        function startGame() {
+            document.getElementById('status-modal').style.display = 'none';
+            updateLeaderboard();
+            // Initial state is waiting for user to click "Start"
+        }
+        async function onReady(state) {
+            console.log("Initial state:", state)
+            userId = await chaaga.getUserId();
+            userName = await chaaga.getUserName() || 'Anonymous';
+
+            roomState = state || {};
+            
+            // Check if we already have a high score in the room
+            if (roomState['highscore_' + userId]) {
+                myHighScore = parseFloat(roomState['highscore_' + userId]);
+            }
+            
+            // Publish username to the room
+            chaaga.set('username_' + userId, userName);
+            roomState['username_' + userId] = userName;
+            
+            startGame();
+
+        }
+
+        function onUpdate(key, value) {
+            roomState[key] = value;
+            if (key.startsWith('highscore_') || key.startsWith('username_')) {
+                updateLeaderboard();
+            }
+        }
+
+        function onError(err) {
+            console.error(err);
+            document.getElementById('loading-msg').innerText = "Error: " + err;
+            document.getElementById('loading-msg').style.display = 'block';
+        }
+
+
+        // Connect to Chaaga
+        const chaaga = new ChaagaRPC();
+        chaaga.onReady(onReady)
+        .onUpdate(onUpdate)
+        .onError(onError)
+        .start();
+
+        function updateLeaderboard() {
+            const scores = [];
+            
+            // Parse state for scores
+            for (const key in roomState) {
+                if (key.startsWith('highscore_')) {
+                    const uid = key.replace('highscore_', '');
+                    const score = parseFloat(roomState[key]);
+                    const name = roomState['username_' + uid] || 'Anonymous';
+                    scores.push({ uid, name, score });
+                }
+            }
+
+            // Sort by score (ascending - lower is better)
+            scores.sort((a, b) => a.score - b.score);
+
+            const tbody = document.getElementById('leaderboard-body');
+            tbody.innerHTML = '';
+            
+            scores.forEach((entry, index) => {
+                const tr = document.createElement('tr');
+                if (entry.uid === userId) tr.classList.add('highlight');
+                tr.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td>${entry.name}</td>
+                    <td>${entry.score} ms</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function showMessage(title, text) {
+            const box = document.getElementById('message-box');
+            box.innerHTML = `<h2>${title}</h2><p>${text}</p>`;
+            box.style.display = 'block';
+        }
+
+        function hideMessage() {
+            document.getElementById('message-box').style.display = 'none';
+        }
+
+        function prepareRound() {
+            if (gameState === 'spawning' || gameState === 'playing') return;
+            
+            hideMessage();
+            gameState = 'spawning';
+            
+            // Clean up any existing bird
+            if (activeBird) {
+                activeBird.remove();
+                activeBird = null;
+            }
+
+            // Pre-calculate spawn position
+            const container = document.getElementById('game-container');
+            const height = container.clientHeight - 100; // Avoid ground
+            const startSide = Math.random() < 0.5 ? 'left' : 'right';
+            const startY = Math.random() * (height - 100) + 50;
+
+            const delay = 2000 + Math.random() * 3000; // 2-5 seconds
+            
+            if (timeoutId) clearTimeout(timeoutId);
+            if (hintTimeoutId) clearTimeout(hintTimeoutId);
+
+            // Show hint 800ms before spawn
+            hintTimeoutId = setTimeout(() => {
+                const arrow = document.getElementById('hint-arrow');
+                arrow.style.display = 'block';
+                arrow.style.top = (startY - 40) + 'px'; // Center vertically relative to bird
+                if (startSide === 'left') {
+                    arrow.style.left = '50px';
+                    arrow.style.right = 'auto';
+                    arrow.style.transform = 'rotate(0deg)';
+                } else {
+                    arrow.style.left = 'auto';
+                    arrow.style.right = '50px';
+                    arrow.style.transform = 'rotate(180deg)';
+                }
+            }, Math.max(0, delay - 800));
+
+            timeoutId = setTimeout(() => {
+                document.getElementById('hint-arrow').style.display = 'none';
+                spawnBird(startSide, startY);
+            }, delay);
+        }
+
+        function spawnBird(startSide, startY) {
+            gameState = 'playing';
+            startTime = Date.now();
+
+            const bird = document.createElement('div');
+            bird.className = 'bird';
+            bird.innerText = '🦆';
+            
+            const container = document.getElementById('game-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight - 100; // Avoid ground
+            
+            // Determine start and end points (random border logic)
+            // Use passed parameters or fallback to random (safety)
+            if (!startSide) startSide = Math.random() < 0.5 ? 'left' : 'right';
+            if (!startY) startY = Math.random() * (height - 100) + 50;
+            const endY = Math.random() * (height - 100) + 50;
+            
+            let startX, endX;
+            
+            if (startSide === 'left') {
+                startX = -80;
+                endX = width + 80;
+                bird.style.transform = 'scaleX(-1)'; // Face right
+            } else {
+                startX = width + 80;
+                endX = -80;
+                // Default faces left
+            }
+
+            bird.style.left = startX + 'px';
+            bird.style.top = startY + 'px';
+            
+            // Touch events for mobile responsiveness
+            bird.addEventListener('mousedown', hitBird);
+            bird.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent mouse emulation
+                hitBird(e);
+            }, {passive: false});
+
+            container.appendChild(bird);
+            activeBird = bird;
+
+            // Animate using Web Animations API for smooth performance
+            const duration = 2000 + Math.random() * 1000; // Speed variation
+            
+            const animation = bird.animate([
+                { left: startX + 'px', top: startY + 'px' },
+                { left: endX + 'px', top: endY + 'px' }
+            ], {
+                duration: duration,
+                easing: 'linear'
+            });
+
+            animation.onfinish = () => {
+                if (gameState === 'playing') {
+                    // Bird escaped
+                    gameState = 'result';
+                    activeBird.remove();
+                    activeBird = null;
+                    showMessage("Missed!", "The bird got away.<br>Tap to try again.");
+                }
+            };
+        }
+
+        function hitBird(e) {
+            if (gameState !== 'playing') return;
+            e.stopPropagation(); // Prevent clicking through
+
+            const reactionTime = Date.now() - startTime;
+            gameState = 'result';
+
+            // Visual feedback
+            activeBird.innerText = '💥';
+            activeBird.classList.add('dead');
+            
+            // Stop horizontal movement, make it fall
+            const rect = activeBird.getBoundingClientRect();
+            activeBird.getAnimations().forEach(anim => anim.cancel());
+            activeBird.style.left = rect.left + 'px';
+            activeBird.style.top = (document.getElementById('game-container').clientHeight - 50) + 'px'; // Fall to ground
+            
+            let title = `${reactionTime} ms`;
+            let subtext = "Good shot!<br>Tap to play again.";
+
+            if (reactionTime < myHighScore) {
+                title = "New Record!";
+                subtext = `${reactionTime} ms<br>You are the fastest!`;
+                myHighScore = reactionTime;
+                chaaga.set('highscore_' + userId, reactionTime);
+                chaaga.set('username_' + userId, userName);
+            }
+
+            setTimeout(() => {
+                showMessage(title, subtext);
+            }, 500);
+        }
+    </script>
+</body>
+</html>
